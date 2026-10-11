@@ -47,6 +47,9 @@ html,body{height:100%;margin:0;background:var(--void);color:var(--ink);font-fami
 .btn:focus-visible{outline:2px solid #fff;outline-offset:3px}
 .note{margin:0;font-size:14px;color:var(--dim);min-height:1.4em}
 .note.warn{color:#ffb4c8}
+.help{display:flex;flex-wrap:wrap;gap:8px 20px}
+.link{font:600 13px/1.4 var(--body);letter-spacing:.06em;color:var(--cyan);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.link:focus-visible{outline:2px solid #fff;outline-offset:3px}
 .rules{list-style:none;margin:0;padding:14px 0 0;border-top:1px solid rgba(159,147,204,.22);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .rules li{display:flex;flex-direction:column;gap:4px;min-width:0}
 .rules b{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan)}
@@ -67,7 +70,7 @@ html,body{height:100%;margin:0;background:var(--void);color:var(--ink);font-fami
 <div id="hud" hidden>ESC &middot; MENU &nbsp; M &middot; SOUND</div>
 <main id="overlay">
   <section class="console" aria-labelledby="ttl">
-    <p class="eyebrow">VR arcade prototype &middot; build 0.2</p>
+    <p class="eyebrow">VR arcade prototype &middot; build 0.3</p>
     <h1 id="ttl" class="title">Segmentis</h1>
     <p class="tag">Split the swarm before it crosses your line.</p>
     <div class="actions">
@@ -75,6 +78,10 @@ html,body{height:100%;margin:0;background:var(--void);color:var(--ink);font-fami
       <button id="flatBtn" class="btn" type="button">Play on this screen</button>
     </div>
     <p id="vrNote" class="note">Checking for a headset&hellip;</p>
+    <div class="help">
+      <button id="liteBtn" class="link" type="button">Crashing in VR? Try Lite mode</button>
+      <a class="link" href="https://threejs.org/examples/webxr_vr_ballshooter.html">Test your headset with a Three.js VR demo</a>
+    </div>
     <ul class="rules">
       <li><b>Aim and fire</b><span>Trigger shoots. Two hands, two blasters.</span></li>
       <li><b>Split it</b><span>Every hit leaves a crystal and cuts the creature in two.</span></li>
@@ -87,8 +94,8 @@ html,body{height:100%;margin:0;background:var(--void);color:var(--ink);font-fami
   </section>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
-<script>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js';
 (function(){
 'use strict';
 const $ = s => document.querySelector(s);
@@ -110,6 +117,7 @@ const PALETTES = [
   { body: 0xff4fa3, head: 0x00e1ff, crystal: 0xd4ff00 },
 ];
 const HAND_COL = { left: 0xff2bd6, right: 0x00f0ff };
+const LITE = location.hash === '#lite';
 
 function cellPos(c, r, lift, out) {
   const along = (ROWS - 1 - r + 0.5) * CELL;
@@ -124,7 +132,7 @@ function toField(p) {
 function inField(fp) { return Math.abs(fp.x) <= FW / 2 && fp.a >= 0 && fp.a <= FD; }
 
 /* ---------------- renderer / scene ---------------- */
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ antialias: !LITE, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
@@ -193,7 +201,7 @@ field.add(new THREE.Mesh(new THREE.PlaneGeometry(FW, FD), new THREE.MeshBasicMat
 const rings = [];
 for (let i = 0; i < 7; i++) {
   const m = new THREE.Mesh(new THREE.TorusGeometry(15, 0.06, 6, 96), new THREE.MeshBasicMaterial({ color: i % 2 ? 0x00f0ff : 0xff2bd6, ...ADD }));
-  m.position.set(0, 5, -24 - i * 9); scene.add(m); rings.push(m);
+  m.position.set(0, 5, -24 - i * 9); if (!LITE) scene.add(m); rings.push(m);
 }
 const lasers = [];
 for (let i = 0; i < 10; i++) {
@@ -201,7 +209,7 @@ for (let i = 0; i < 10; i++) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(0.06, 34, 0.06), new THREE.MeshBasicMaterial({ color: i % 4 < 2 ? 0xff2bd6 : 0x00f0ff, ...ADD }));
   m.position.set(side * (8.5 + (i % 3)), 0, -5 - Math.floor(i / 2) * 5.5);
   m.userData = { base: side * 0.35, ph: i * 1.3 };
-  scene.add(m); lasers.push(m);
+  if (!LITE) scene.add(m); lasers.push(m);
 }
 {
   const n = 500, sp = new Float32Array(n * 3);
@@ -216,7 +224,7 @@ for (let i = 0; i < 10; i++) {
 /* ---------------- scoreboard ---------------- */
 const sbCanvas = document.createElement('canvas'); sbCanvas.width = 1024; sbCanvas.height = 300;
 const sbCtx = sbCanvas.getContext('2d');
-const sbTex = new THREE.CanvasTexture(sbCanvas); sbTex.anisotropy = 4;
+const sbTex = new THREE.CanvasTexture(sbCanvas); sbTex.anisotropy = 4; sbTex.colorSpace = THREE.SRGBColorSpace;
 const scoreboard = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 2.11), new THREE.MeshBasicMaterial({ map: sbTex, transparent: true, fog: false, depthWrite: false }));
 scoreboard.position.set(0, 5.9, -12.4); scoreboard.lookAt(0, 1.6, 0); scene.add(scoreboard);
 let sbDirty = true, msg = null, msgTimer = 0;
@@ -295,7 +303,7 @@ const gPos = new Float32Array(MAXG * 3), gCol = new Float32Array(MAXG * 3);
 const glowGeo = new THREE.BufferGeometry();
 glowGeo.setAttribute('position', new THREE.BufferAttribute(gPos, 3)); glowGeo.setAttribute('color', new THREE.BufferAttribute(gCol, 3));
 const glowPts = new THREE.Points(glowGeo, new THREE.PointsMaterial({ size: 0.8, map: glowTex, vertexColors: true, ...ADD }));
-glowPts.frustumCulled = false; scene.add(glowPts);
+glowPts.frustumCulled = false; if (!LITE) scene.add(glowPts);
 let gi = 0;
 function addGlow(p, col, k) { if (gi >= MAXG) return; const o = gi * 3; gPos[o] = p.x; gPos[o + 1] = p.y; gPos[o + 2] = p.z; gCol[o] = col.r * k; gCol[o + 1] = col.g * k; gCol[o + 2] = col.b * k; gi++; }
 
@@ -305,7 +313,7 @@ const pPos = new Float32Array(PMAX * 3), pCol = new Float32Array(PMAX * 3), pVel
 const partGeo = new THREE.BufferGeometry();
 partGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3)); partGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
 const parts = new THREE.Points(partGeo, new THREE.PointsMaterial({ size: 0.11, map: glowTex, vertexColors: true, ...ADD }));
-parts.frustumCulled = false; scene.add(parts);
+parts.frustumCulled = false; if (!LITE) scene.add(parts);
 let pIdx = 0;
 for (let i = 0; i < PMAX; i++) pPos[i * 3 + 1] = -100;
 function burst(p, hex, n, speed) {
@@ -343,7 +351,7 @@ function popTex(text, hex) {
   const col = '#' + hex.toString(16).padStart(6, '0');
   g.font = '700 58px "Chakra Petch", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.shadowColor = col; g.shadowBlur = 14; g.fillStyle = col; g.fillText(text, 128, 50); g.shadowBlur = 0; g.fillStyle = '#fff'; g.globalAlpha = .8; g.fillText(text, 128, 50);
-  const t = new THREE.CanvasTexture(c); popTexCache.set(key, t); return t;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; popTexCache.set(key, t); return t;
 }
 const pops = [];
 for (let i = 0; i < 10; i++) {
@@ -452,7 +460,7 @@ function initAudio() {
   noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
   const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   setMuted(muted);
-  startMusic();
+  if (!LITE) startMusic();
 }
 function setMuted(m) { muted = m; if (!actx) return; const t = actx.currentTime; master.gain.setTargetAtTime(m ? 0 : 0.9, t, 0.05); }
 function out(dest, pan) {
@@ -971,6 +979,9 @@ flatBtn.addEventListener('click', () => {
   showOverlay(false);
 });
 
+const liteBtn = $('#liteBtn');
+if (LITE) liteBtn.textContent = 'Lite mode is on. Switch back to full mode';
+liteBtn.addEventListener('click', () => { location.hash = LITE ? '' : 'lite'; location.reload(); });
 const cv = renderer.domElement;
 function setMouse(e) { const r = cv.getBoundingClientRect(); mouseNDC.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); }
 cv.addEventListener('pointermove', e => setMouse(e));
