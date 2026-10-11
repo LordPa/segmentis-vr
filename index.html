@@ -70,7 +70,7 @@ html,body{height:100%;margin:0;background:var(--void);color:var(--ink);font-fami
 <div id="hud" hidden>ESC &middot; MENU &nbsp; M &middot; SOUND</div>
 <main id="overlay">
   <section class="console" aria-labelledby="ttl">
-    <p class="eyebrow">VR arcade prototype &middot; build 0.3</p>
+    <p class="eyebrow">VR arcade prototype &middot; build 0.4</p>
     <h1 id="ttl" class="title">Segmentis</h1>
     <p class="tag">Split the swarm before it crosses your line.</p>
     <div class="actions">
@@ -79,6 +79,7 @@ html,body{height:100%;margin:0;background:var(--void);color:var(--ink);font-fami
     </div>
     <p id="vrNote" class="note">Checking for a headset&hellip;</p>
     <div class="help">
+      <button id="testBtn" class="link" type="button">Run the VR crash test</button>
       <button id="liteBtn" class="link" type="button">Crashing in VR? Try Lite mode</button>
       <a class="link" href="https://threejs.org/examples/webxr_vr_ballshooter.html">Test your headset with a Three.js VR demo</a>
     </div>
@@ -118,6 +119,8 @@ const PALETTES = [
 ];
 const HAND_COL = { left: 0xff2bd6, right: 0x00f0ff };
 const LITE = location.hash === '#lite';
+const VRTEST = location.hash === '#vrtest';
+let allowBlasters = false; const pendingBuilds = [];
 
 function cellPos(c, r, lift, out) {
   const along = (ROWS - 1 - r + 0.5) * CELL;
@@ -198,6 +201,7 @@ field.add(new THREE.Mesh(new THREE.PlaneGeometry(FW, FD), new THREE.MeshBasicMat
   lineGlow.position.set(0, -FD / 2, 0.03); field.add(lineGlow);
 }
 
+let starPts = null;
 const rings = [];
 for (let i = 0; i < 7; i++) {
   const m = new THREE.Mesh(new THREE.TorusGeometry(15, 0.06, 6, 96), new THREE.MeshBasicMaterial({ color: i % 2 ? 0x00f0ff : 0xff2bd6, ...ADD }));
@@ -218,7 +222,7 @@ for (let i = 0; i < 10; i++) {
     sp[i * 3] = Math.cos(th) * Math.cos(ph) * 90; sp[i * 3 + 1] = Math.sin(ph) * 90 + 2; sp[i * 3 + 2] = Math.sin(th) * Math.cos(ph) * 90;
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xb7a8ff, size: 0.35, map: glowTex, fog: false, ...ADD })));
+  starPts = new THREE.Points(g, new THREE.PointsMaterial({ color: 0xb7a8ff, size: 0.35, map: glowTex, fog: false, ...ADD })); scene.add(starPts);
 }
 
 /* ---------------- scoreboard ---------------- */
@@ -422,6 +426,7 @@ function makeHand(idx) {
   ctrl.addEventListener('connected', e => {
     const src = e.data; if (!src || src.targetRayMode !== 'tracked-pointer') return;
     h.source = src; h.side = src.handedness === 'left' ? 'left' : 'right'; h.color = HAND_COL[h.side];
+    const build = () => {
     if (h.model) ctrl.remove(h.model), ctrl.remove(h.laser);
     h.model = makeBlaster(h.color); ctrl.add(h.model);
     const lg = new THREE.BufferGeometry();
@@ -430,12 +435,15 @@ function makeHand(idx) {
     lg.setAttribute('color', new THREE.BufferAttribute(new Float32Array([cc.r * .7, cc.g * .7, cc.b * .7, 0, 0, 0]), 3));
     h.laser = new THREE.Line(lg, new THREE.LineBasicMaterial({ vertexColors: true, ...ADD })); ctrl.add(h.laser);
     if (!h.reticle) h.reticle = makeReticle(h.color); else h.reticle.material.color.setHex(h.color);
+    };
+    if (!VRTEST) crumb('controller connected (' + h.side + ')');
+    if (VRTEST && !allowBlasters) pendingBuilds.push(build); else build();
   });
   ctrl.addEventListener('disconnected', () => {
     if (h.model) { ctrl.remove(h.model); ctrl.remove(h.laser); h.model = null; h.laser = null; }
     if (h.reticle) h.reticle.visible = false; h.source = null; h.firing = false;
   });
-  ctrl.addEventListener('selectstart', () => { h.firing = true; onTriggerPress(); });
+  ctrl.addEventListener('selectstart', () => { h.firing = true; if (!VRTEST && state.mode !== 'playing') crumb('trigger pressed'); onTriggerPress(); });
   ctrl.addEventListener('selectend', () => { h.firing = false; });
   hands.push(h);
 }
@@ -857,6 +865,39 @@ function updateAim(dt) {
   }
 }
 
+/* ---------------- VR crash test: adds one feature every few seconds and records each step ---------------- */
+const show = (...objs) => objs.forEach(o => { if (o) o.visible = true; });
+const TEST_STAGES = [
+  ['empty black room', () => {}],
+  ['floor grid', () => show(floorGrid, footRing)],
+  ['playing field', () => show(field)],
+  ['crystals', () => show(crysFill, crysWire)],
+  ['creature', () => show(bodyFill, bodyWire, headFill, headWire, creatureLines)],
+  ['glow halos', () => show(glowPts)],
+  ['scoreboard', () => show(scoreboard)],
+  ['stars and rings', () => show(starPts, ...rings)],
+  ['side lasers', () => show(...lasers)],
+  ['blasters in your hands', () => { allowBlasters = true; while (pendingBuilds.length) pendingBuilds.shift()(); }],
+  ['spark particles', () => { show(parts); burst(tmpV.set(0, 1.4, -2), 0x00f0ff, 80, 3); }],
+  ['sound and music', () => initAudio()],
+];
+const TEST_SECS = 5;
+let testStage = -1, testTimer = 0;
+function testCrumb(n) { crumb('crash test stage ' + (n + 1) + ' of ' + TEST_STAGES.length + ' (' + TEST_STAGES[n][0] + ')'); }
+function startVrTest() {
+  for (const o of [floorGrid, footRing, field, crysFill, crysWire, bodyFill, bodyWire, headFill, headWire, creatureLines, glowPts, scoreboard, starPts, ...rings, ...lasers, parts]) if (o) o.visible = false;
+  testStage = 0; testTimer = 0; testCrumb(0);
+}
+function updateVrTest(dt) {
+  if (testStage < 0 || !renderer.xr.isPresenting) return;
+  testTimer += dt; if (testTimer < TEST_SECS) return;
+  testTimer = 0;
+  if (testStage < TEST_STAGES.length - 1) {
+    testStage++; testCrumb(testStage); TEST_STAGES[testStage][1]();
+    setMsg('CRASH TEST', 'STEP ' + (testStage + 1) + ' OF ' + TEST_STAGES.length + ': ' + TEST_STAGES[testStage][0].toUpperCase());
+  } else { crumb('crash test passed all ' + TEST_STAGES.length + ' stages'); setMsg('TEST PASSED', 'TAKE OFF THE HEADSET'); testStage = -1; }
+}
+
 /* ---------------- main loop ---------------- */
 const clock = new THREE.Clock();
 let elapsed = 0;
@@ -930,7 +971,8 @@ function loopInner() {
   flashMesh.material.opacity = flash * 0.55; flashMesh.visible = flash > 0; flashMesh.position.copy(headPos);
   if (sbDirty) drawScoreboard();
   renderer.render(scene, camera);
-  if (renderer.xr.isPresenting) { vrFrames++; if (vrFrames === 1) crumb('first VR frame drawn'); else if (vrFrames === 600) crumb('VR ran fine for about 8 seconds'); }
+  if (renderer.xr.isPresenting && !VRTEST) { vrFrames++; if (vrFrames === 1) crumb('first VR frame drawn'); else if (vrFrames === 600) crumb('VR ran fine for about 8 seconds'); }
+  updateVrTest(dt);
 }
 renderer.setAnimationLoop(loop);
 
@@ -950,7 +992,7 @@ if (navigator.xr && navigator.xr.isSessionSupported) {
 
 vrBtn.addEventListener('click', async () => {
   crumb('pressed Enter VR');
-  initAudio();
+  if (!VRTEST) initAudio();
   try {
     const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
     crumb('headset accepted VR request');
@@ -958,6 +1000,7 @@ vrBtn.addEventListener('click', async () => {
     vrFrames = 0;
     await renderer.xr.setSession(session);
     crumb('VR session started');
+    if (VRTEST) startVrTest();
     session.addEventListener('end', onSessionEnd);
     showOverlay(false);
     if (state.mode === 'playing' || state.mode === 'dying') state.paused = false; else toTitle();
@@ -979,6 +1022,9 @@ flatBtn.addEventListener('click', () => {
   showOverlay(false);
 });
 
+const testBtn = $('#testBtn');
+if (VRTEST) testBtn.textContent = 'Crash test is on. Press Enter VR and wait about a minute. Tap here to leave test mode';
+testBtn.addEventListener('click', () => { location.hash = VRTEST ? '' : 'vrtest'; location.reload(); });
 const liteBtn = $('#liteBtn');
 if (LITE) liteBtn.textContent = 'Lite mode is on. Switch back to full mode';
 liteBtn.addEventListener('click', () => { location.hash = LITE ? '' : 'lite'; location.reload(); });
@@ -1008,7 +1054,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { po
 
 try {
   const le = localStorage.getItem('segmentis.lastError'), lc = localStorage.getItem('segmentis.crumb');
-  if (lc && lc.indexOf('VR ran fine') !== 0) setTimeout(() => { vrNote.classList.add('warn'); vrNote.textContent = 'Last VR try stopped after: ' + lc + (le ? '. Error: ' + le : '.'); }, 900);
+  if (lc && lc.indexOf('VR ran fine') !== 0) setTimeout(() => { vrNote.classList.add('warn'); vrNote.textContent = 'Last VR run reached: ' + lc + (le ? '. Error: ' + le : '.'); }, 900);
 } catch (e) {}
 applyPalette(1);
 toTitle();
