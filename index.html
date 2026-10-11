@@ -67,7 +67,7 @@ html,body{height:100%;margin:0;background:var(--void);color:var(--ink);font-fami
 <div id="hud" hidden>ESC &middot; MENU &nbsp; M &middot; SOUND</div>
 <main id="overlay">
   <section class="console" aria-labelledby="ttl">
-    <p class="eyebrow">VR arcade prototype &middot; build 0.1</p>
+    <p class="eyebrow">VR arcade prototype &middot; build 0.2</p>
     <h1 id="ttl" class="title">Segmentis</h1>
     <p class="tag">Split the swarm before it crosses your line.</p>
     <div class="actions">
@@ -128,7 +128,6 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.xr.enabled = true;
-if (renderer.xr.setFoveation) renderer.xr.setFoveation(1);
 $('#stage').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -853,7 +852,18 @@ function updateAim(dt) {
 /* ---------------- main loop ---------------- */
 const clock = new THREE.Clock();
 let elapsed = 0;
-function loop() {
+function loop() { try { loopInner(); } catch (err) { reportError(err); try { renderer.render(scene, camera); } catch (e2) {} } }
+let lastErr = '', vrFrames = 0;
+function crumb(s) { try { localStorage.setItem('segmentis.crumb', s + ' at ' + new Date().toLocaleTimeString()); } catch (e) {} }
+function reportError(err) {
+  const m = String((err && (err.message || err.reason || err)) || 'unknown error');
+  if (lastErr === m) return; lastErr = m;
+  try { localStorage.setItem('segmentis.lastError', m); } catch (e) {}
+  setMsg('ERROR', m.slice(0, 44).toUpperCase());
+}
+window.addEventListener('error', e => reportError(e.error || e.message));
+window.addEventListener('unhandledrejection', e => reportError(e.reason));
+function loopInner() {
   const dt = Math.min(clock.getDelta(), 0.05);
   elapsed += dt; const t = elapsed;
   headPos.copy(camera.position); if (headPos.lengthSq() < 0.01) headPos.set(0, 1.6, 0);
@@ -912,6 +922,7 @@ function loop() {
   flashMesh.material.opacity = flash * 0.55; flashMesh.visible = flash > 0; flashMesh.position.copy(headPos);
   if (sbDirty) drawScoreboard();
   renderer.render(scene, camera);
+  if (renderer.xr.isPresenting) { vrFrames++; if (vrFrames === 1) crumb('first VR frame drawn'); else if (vrFrames === 600) crumb('VR ran fine for about 8 seconds'); }
 }
 renderer.setAnimationLoop(loop);
 
@@ -930,17 +941,21 @@ if (navigator.xr && navigator.xr.isSessionSupported) {
 }
 
 vrBtn.addEventListener('click', async () => {
+  crumb('pressed Enter VR');
   initAudio();
   try {
-    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] });
+    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor'] });
+    crumb('headset accepted VR request');
     renderer.xr.setReferenceSpaceType('local-floor');
+    vrFrames = 0;
     await renderer.xr.setSession(session);
+    crumb('VR session started');
     session.addEventListener('end', onSessionEnd);
     showOverlay(false);
     if (state.mode === 'playing' || state.mode === 'dying') state.paused = false; else toTitle();
     sbDirty = true;
   } catch (e) {
-    vrNote.classList.add('warn'); vrNote.textContent = 'Could not start VR: ' + (e && e.message ? e.message : 'the headset refused the session') + '.';
+    reportError(e); vrNote.classList.add('warn'); vrNote.textContent = 'Could not start VR: ' + (e && e.message ? e.message : 'the headset refused the session') + '.';
   }
 });
 function onSessionEnd() {
@@ -980,6 +995,10 @@ window.addEventListener('resize', () => {
 });
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { popTexCache.clear(); sbDirty = true; });
 
+try {
+  const le = localStorage.getItem('segmentis.lastError'), lc = localStorage.getItem('segmentis.crumb');
+  if (lc && lc.indexOf('VR ran fine') !== 0) setTimeout(() => { vrNote.classList.add('warn'); vrNote.textContent = 'Last VR try stopped after: ' + lc + (le ? '. Error: ' + le : '.'); }, 900);
+} catch (e) {}
 applyPalette(1);
 toTitle();
 if (location.hash === '#debug') window.__seg = { state, get segments() { return segments; }, get spider() { return spider; } };
