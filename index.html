@@ -1,0 +1,990 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Segmentis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Monoton&display=swap">
+<style>
+/* Layout: one full-bleed WebGL arena running the attract demo; a single neon console floats over it. Deliberately single-theme (arcade cabinet at night). */
+:root{
+  --void:#06010f;
+  --panel:rgba(12,5,30,.80);
+  --ink:#ece7ff;
+  --dim:#9f93cc;
+  --cyan:#00f0ff;
+  --magenta:#ff2bd6;
+  --line:#ff1f5a;
+  --display:'Monoton','Chakra Petch',system-ui,sans-serif;
+  --body:'Chakra Petch',system-ui,-apple-system,'Segoe UI',sans-serif;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:var(--void);color:var(--ink);font-family:var(--body);overflow:hidden}
+#stage{position:fixed;inset:0}
+#stage canvas{display:block;width:100%;height:100%;touch-action:none}
+#overlay{position:fixed;inset:0;display:grid;place-items:center;padding-inline:16px;padding-block:24px;overflow-y:auto;
+  background:radial-gradient(ellipse 70% 60% at 50% 45%,rgba(6,1,15,.15),rgba(6,1,15,.82))}
+.console{width:100%;max-width:560px;box-sizing:border-box;padding:28px 28px 22px;border:1px solid rgba(0,240,255,.35);
+  background:var(--panel);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  box-shadow:0 0 0 1px rgba(255,43,214,.12),0 0 40px rgba(0,240,255,.12),inset 0 0 30px rgba(255,43,214,.06);
+  display:flex;flex-direction:column;gap:16px}
+.eyebrow{margin:0;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--dim)}
+.title{margin:0;font-family:var(--display);font-weight:400;font-size:clamp(40px,11vw,72px);line-height:1;letter-spacing:.04em;color:#fff;
+  text-shadow:0 0 6px var(--cyan),0 0 18px var(--cyan),0 0 38px var(--magenta);text-wrap:balance;animation:igniteOn 1.6s steps(1,end) 1}
+@keyframes igniteOn{0%{opacity:.15}12%{opacity:1}18%{opacity:.3}26%{opacity:1}31%{opacity:.5}36%,100%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.title{animation:none}}
+.tag{margin:0;font-size:18px;color:var(--ink);max-width:40ch}
+.actions{display:flex;flex-wrap:wrap;gap:12px}
+.btn{flex:1 1 180px;min-height:52px;font:600 15px/1 var(--body);letter-spacing:.16em;text-transform:uppercase;cursor:pointer;
+  color:var(--ink);background:transparent;border:1px solid var(--magenta);box-shadow:0 0 14px rgba(255,43,214,.25),inset 0 0 12px rgba(255,43,214,.12);transition:background .15s,box-shadow .15s}
+.btn:hover{background:rgba(255,43,214,.12)}
+.btn.primary{border-color:var(--cyan);color:#001a1c;background:var(--cyan);box-shadow:0 0 22px rgba(0,240,255,.55)}
+.btn.primary:hover{background:#7ff8ff}
+.btn:disabled{cursor:not-allowed;opacity:.45;box-shadow:none}
+.btn:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.note{margin:0;font-size:14px;color:var(--dim);min-height:1.4em}
+.note.warn{color:#ffb4c8}
+.rules{list-style:none;margin:0;padding:14px 0 0;border-top:1px solid rgba(159,147,204,.22);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.rules li{display:flex;flex-direction:column;gap:4px;min-width:0}
+.rules b{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan)}
+.rules li:nth-child(2) b{color:var(--magenta)}
+.rules li:nth-child(3) b{color:var(--line)}
+.rules span{font-size:14px;line-height:1.4;color:var(--ink)}
+.foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 16px;font-size:13px;color:var(--dim)}
+.foot .best{font-variant-numeric:tabular-nums;letter-spacing:.12em;text-transform:uppercase}
+.foot .best span{color:var(--ink)}
+@media (max-width:520px){.rules{grid-template-columns:1fr}.console{padding:22px 18px 18px}}
+#hud{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:16px;font-size:12px;letter-spacing:.18em;color:var(--dim);
+  border:1px solid rgba(159,147,204,.35);padding:6px 10px;background:rgba(6,1,15,.6);pointer-events:none}
+</style>
+</head>
+<body>
+
+<div id="stage"></div>
+<div id="hud" hidden>ESC &middot; MENU &nbsp; M &middot; SOUND</div>
+<main id="overlay">
+  <section class="console" aria-labelledby="ttl">
+    <p class="eyebrow">VR arcade prototype &middot; build 0.1</p>
+    <h1 id="ttl" class="title">Segmentis</h1>
+    <p class="tag">Split the swarm before it crosses your line.</p>
+    <div class="actions">
+      <button id="vrBtn" class="btn primary" type="button" disabled>Enter VR</button>
+      <button id="flatBtn" class="btn" type="button">Play on this screen</button>
+    </div>
+    <p id="vrNote" class="note">Checking for a headset&hellip;</p>
+    <ul class="rules">
+      <li><b>Aim and fire</b><span>Trigger shoots. Two hands, two blasters.</span></li>
+      <li><b>Split it</b><span>Every hit leaves a crystal and cuts the creature in two.</span></li>
+      <li><b>Hold the line</b><span>A segment on the red line costs a life. The spider goes for your head.</span></li>
+    </ul>
+    <div class="foot">
+      <span>Screen: aim with mouse or touch, hold to fire</span>
+      <span class="best">Best <span id="bestVal">000000</span></span>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const V3 = THREE.Vector3;
+
+/* ---------------- field geometry ---------------- */
+const COLS = 17, ROWS = 22, CELL = 0.45;
+const TILT = 20 * Math.PI / 180, NEAR_Y = 0.55, NEAR_Z = -1.5;
+const SIN = Math.sin(TILT), COS = Math.cos(TILT);
+const N = new V3(0, COS, SIN);      // field normal, toward player
+const U = new V3(0, SIN, -COS);     // uphill, away from player
+const P0 = new V3(0, NEAR_Y, NEAR_Z);
+const FW = COLS * CELL, FD = ROWS * CELL;
+const BOLT_SPEED = 26, FIRE_CD = 0.13;
+const PALETTES = [
+  { body: 0x00f0ff, head: 0xff2bd6, crystal: 0x7cff4f },
+  { body: 0xffd400, head: 0xff3b3b, crystal: 0x2bd9ff },
+  { body: 0x9d6bff, head: 0x00ffa3, crystal: 0xff8a1f },
+  { body: 0xff4fa3, head: 0x00e1ff, crystal: 0xd4ff00 },
+];
+const HAND_COL = { left: 0xff2bd6, right: 0x00f0ff };
+
+function cellPos(c, r, lift, out) {
+  const along = (ROWS - 1 - r + 0.5) * CELL;
+  return out.set((c - (COLS - 1) / 2) * CELL, NEAR_Y + along * SIN + lift * COS, NEAR_Z - along * COS + lift * SIN);
+}
+const fieldPt = { x: 0, a: 0, h: 0 };
+function toField(p) {
+  const dx = p.x - P0.x, dy = p.y - P0.y, dz = p.z - P0.z;
+  fieldPt.x = dx; fieldPt.a = dy * U.y + dz * U.z; fieldPt.h = dy * N.y + dz * N.z;
+  return fieldPt;
+}
+function inField(fp) { return Math.abs(fp.x) <= FW / 2 && fp.a >= 0 && fp.a <= FD; }
+
+/* ---------------- renderer / scene ---------------- */
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.xr.enabled = true;
+if (renderer.xr.setFoveation) renderer.xr.setFoveation(1);
+$('#stage').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x06010f);
+scene.fog = new THREE.FogExp2(0x06010f, 0.03);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.05, 220);
+scene.add(camera);
+function placeDesktopCam() {
+  const a = window.innerWidth / window.innerHeight;
+  camera.fov = a < 1 ? 82 : 70;
+  camera.position.set(0, 2.7, a < 1 ? 6.2 : 3.4);
+  camera.lookAt(0, 1.5, -5);
+  camera.aspect = a; camera.updateProjectionMatrix();
+}
+placeDesktopCam();
+
+const tmpV = new V3(), tmpV2 = new V3(), tmpV3 = new V3(), tmpQ = new THREE.Quaternion(), tmpM = new THREE.Matrix4(), tmpS = new V3();
+const tmpCol = new THREE.Color();
+const headPos = new V3(0, 1.6, 0);
+const AXIS_Y = new V3(0, 1, 0), AXIS_Z = new V3(0, 0, 1), FWD = new V3(0, 0, -1);
+
+function makeGlowTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.22, 'rgba(255,255,255,.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const glowTex = makeGlowTex();
+const ADD = { transparent: true, blending: THREE.AdditiveBlending, depthWrite: false };
+
+/* ---------------- environment ---------------- */
+const floorGrid = new THREE.GridHelper(90, 90, 0x3a1670, 0x1d0b40);
+floorGrid.material.transparent = true; floorGrid.material.opacity = 0.8;
+scene.add(floorGrid);
+const footRing = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.46, 48), new THREE.MeshBasicMaterial({ color: 0x00f0ff, ...ADD }));
+footRing.rotation.x = -Math.PI / 2; footRing.position.y = 0.006; scene.add(footRing);
+
+const field = new THREE.Group();
+field.rotation.x = -(Math.PI / 2 - TILT);
+field.position.copy(P0).addScaledVector(U, FD / 2);
+scene.add(field);
+field.add(new THREE.Mesh(new THREE.PlaneGeometry(FW, FD), new THREE.MeshBasicMaterial({ color: 0x0b0422, transparent: true, opacity: 0.92 })));
+{
+  const gp = [];
+  for (let i = 0; i <= COLS; i++) { const x = -FW / 2 + i * CELL; gp.push(x, -FD / 2, 0.003, x, FD / 2, 0.003); }
+  for (let j = 0; j <= ROWS; j++) { const y = -FD / 2 + j * CELL; gp.push(-FW / 2, y, 0.003, FW / 2, y, 0.003); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(gp, 3));
+  var gridMat = new THREE.LineBasicMaterial({ color: 0x3b1a78 });
+  field.add(new THREE.LineSegments(g, gridMat));
+  const bp = [-FW / 2, -FD / 2, .01, -FW / 2, FD / 2, .01, FW / 2, -FD / 2, .01, FW / 2, FD / 2, .01, -FW / 2, FD / 2, .01, FW / 2, FD / 2, .01];
+  const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
+  var borderMat = new THREE.LineBasicMaterial({ color: 0xff2bd6 });
+  field.add(new THREE.LineSegments(bg, borderMat));
+  const dz = new THREE.Mesh(new THREE.PlaneGeometry(FW, 3 * CELL), new THREE.MeshBasicMaterial({ color: 0xff1f5a, opacity: 0.09, ...ADD }));
+  dz.position.set(0, -FD / 2 + 1.5 * CELL, 0.005); field.add(dz);
+  var lineBar = new THREE.Mesh(new THREE.BoxGeometry(FW + 0.12, 0.035, 0.035), new THREE.MeshBasicMaterial({ color: 0xff1f5a }));
+  lineBar.position.set(0, -FD / 2, 0.02); field.add(lineBar);
+  var lineGlow = new THREE.Mesh(new THREE.PlaneGeometry(FW + 1.2, 0.7), new THREE.MeshBasicMaterial({ map: glowTex, color: 0xff1f5a, opacity: 0.9, ...ADD }));
+  lineGlow.position.set(0, -FD / 2, 0.03); field.add(lineGlow);
+}
+
+const rings = [];
+for (let i = 0; i < 7; i++) {
+  const m = new THREE.Mesh(new THREE.TorusGeometry(15, 0.06, 6, 96), new THREE.MeshBasicMaterial({ color: i % 2 ? 0x00f0ff : 0xff2bd6, ...ADD }));
+  m.position.set(0, 5, -24 - i * 9); scene.add(m); rings.push(m);
+}
+const lasers = [];
+for (let i = 0; i < 10; i++) {
+  const side = i % 2 ? 1 : -1;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(0.06, 34, 0.06), new THREE.MeshBasicMaterial({ color: i % 4 < 2 ? 0xff2bd6 : 0x00f0ff, ...ADD }));
+  m.position.set(side * (8.5 + (i % 3)), 0, -5 - Math.floor(i / 2) * 5.5);
+  m.userData = { base: side * 0.35, ph: i * 1.3 };
+  scene.add(m); lasers.push(m);
+}
+{
+  const n = 500, sp = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const th = Math.random() * Math.PI * 2, ph = Math.random() * Math.PI * 0.45;
+    sp[i * 3] = Math.cos(th) * Math.cos(ph) * 90; sp[i * 3 + 1] = Math.sin(ph) * 90 + 2; sp[i * 3 + 2] = Math.sin(th) * Math.cos(ph) * 90;
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xb7a8ff, size: 0.35, map: glowTex, fog: false, ...ADD })));
+}
+
+/* ---------------- scoreboard ---------------- */
+const sbCanvas = document.createElement('canvas'); sbCanvas.width = 1024; sbCanvas.height = 300;
+const sbCtx = sbCanvas.getContext('2d');
+const sbTex = new THREE.CanvasTexture(sbCanvas); sbTex.anisotropy = 4;
+const scoreboard = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 2.11), new THREE.MeshBasicMaterial({ map: sbTex, transparent: true, fog: false, depthWrite: false }));
+scoreboard.position.set(0, 5.9, -12.4); scoreboard.lookAt(0, 1.6, 0); scene.add(scoreboard);
+let sbDirty = true, msg = null, msgTimer = 0;
+const pad = (n, l) => String(Math.max(0, Math.floor(n))).padStart(l, '0');
+function setMsg(big, small, opts) { opts = opts || {}; msg = { big, small, title: !!opts.title }; msgTimer = opts.time || 0; sbDirty = true; }
+function neonText(ctx, txt, x, y, font, color, blur, align) {
+  ctx.font = font; ctx.textAlign = align || 'center'; ctx.shadowColor = color; ctx.shadowBlur = blur;
+  ctx.fillStyle = color; ctx.fillText(txt, x, y); ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.85; ctx.fillText(txt, x, y); ctx.globalAlpha = 1;
+}
+function drawScoreboard() {
+  const c = sbCtx, W = 1024, H = 300;
+  c.clearRect(0, 0, W, H);
+  c.fillStyle = 'rgba(10,4,26,0.78)'; c.fillRect(8, 8, W - 16, H - 16);
+  c.strokeStyle = '#00f0ff'; c.lineWidth = 4; c.shadowColor = '#00f0ff'; c.shadowBlur = 18; c.strokeRect(10, 10, W - 20, H - 20); c.shadowBlur = 0;
+  c.font = '600 26px "Chakra Petch", sans-serif'; c.fillStyle = '#9f93cc'; c.textBaseline = 'alphabetic';
+  c.textAlign = 'left'; c.fillText('S C O R E', 56, 62);
+  c.textAlign = 'center'; c.fillText('W A V E', W / 2, 62);
+  c.textAlign = 'right'; c.fillText('B E S T', W - 56, 62);
+  neonText(c, pad(state.score, 6), 56, 128, '700 66px "Chakra Petch", sans-serif', '#00f0ff', 16, 'left');
+  neonText(c, pad(state.wave, 2), W / 2, 128, '700 66px "Chakra Petch", sans-serif', '#ff2bd6', 16, 'center');
+  neonText(c, pad(state.hi, 6), W - 56, 128, '700 66px "Chakra Petch", sans-serif', '#b7a8ff', 12, 'right');
+  c.fillStyle = 'rgba(159,147,204,0.3)'; c.fillRect(56, 156, W - 112, 2);
+  if (msg) {
+    if (msg.title) neonText(c, msg.big, W / 2, 238, '76px Monoton, "Chakra Petch", sans-serif', '#ff2bd6', 22);
+    else neonText(c, msg.big, W / 2, 232, '700 62px "Chakra Petch", sans-serif', '#ff2bd6', 20);
+    if (msg.small) { c.font = '600 26px "Chakra Petch", sans-serif'; c.fillStyle = '#ece7ff'; c.textAlign = 'center'; c.fillText(msg.small, W / 2, 278); }
+  } else {
+    c.font = '600 26px "Chakra Petch", sans-serif'; c.fillStyle = '#9f93cc'; c.textAlign = 'center'; c.fillText('L I V E S', W / 2, 200);
+    const n = Math.max(0, state.lives), gap = 64, x0 = W / 2 - (n - 1) * gap / 2;
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * gap, y = 246;
+      c.beginPath(); c.moveTo(x, y - 22); c.lineTo(x + 16, y); c.lineTo(x, y + 22); c.lineTo(x - 16, y); c.closePath();
+      c.shadowColor = '#7cff4f'; c.shadowBlur = 16; c.strokeStyle = '#7cff4f'; c.lineWidth = 4; c.stroke(); c.shadowBlur = 0;
+    }
+  }
+  sbTex.needsUpdate = true; sbDirty = false;
+}
+
+/* ---------------- materials / instanced meshes ---------------- */
+const MAXS = 64, MAXC = COLS * ROWS;
+const bodyWireMat = new THREE.MeshBasicMaterial({ wireframe: true }), bodyFillMat = new THREE.MeshBasicMaterial();
+const headWireMat = new THREE.MeshBasicMaterial({ wireframe: true }), headFillMat = new THREE.MeshBasicMaterial();
+const crysWireMat = new THREE.MeshBasicMaterial({ wireframe: true }), crysFillMat = new THREE.MeshBasicMaterial();
+const bodyColor = new THREE.Color(), headColor = new THREE.Color(), crysColor = new THREE.Color();
+const segGeo = new THREE.IcosahedronGeometry(0.17, 1), headGeo = new THREE.IcosahedronGeometry(0.21, 0);
+const crysGeo = new THREE.OctahedronGeometry(0.15, 0); crysGeo.scale(1, 1.55, 1);
+function inst(geo, mat, n) { const m = new THREE.InstancedMesh(geo, mat, n); m.frustumCulled = false; m.count = 0; scene.add(m); return m; }
+const bodyFill = inst(segGeo, bodyFillMat, MAXS), bodyWire = inst(segGeo, bodyWireMat, MAXS);
+const headFill = inst(headGeo, headFillMat, MAXS), headWire = inst(headGeo, headWireMat, MAXS);
+const crysFill = inst(crysGeo, crysFillMat, MAXC), crysWire = inst(crysGeo, crysWireMat, MAXC);
+function applyPalette(w) {
+  const p = PALETTES[(w - 1) % PALETTES.length];
+  bodyColor.setHex(p.body); headColor.setHex(p.head); crysColor.setHex(p.crystal);
+  bodyWireMat.color.copy(bodyColor); bodyFillMat.color.copy(bodyColor).multiplyScalar(0.16);
+  headWireMat.color.copy(headColor); headFillMat.color.copy(headColor).multiplyScalar(0.2);
+  crysWireMat.color.copy(crysColor); crysFillMat.color.copy(crysColor).multiplyScalar(0.14);
+}
+
+// creature lines: spine links, legs, mandibles
+const MAXL = 320;
+const lineGeo = new THREE.BufferGeometry();
+const lp = new Float32Array(MAXL * 6), lc = new Float32Array(MAXL * 6);
+lineGeo.setAttribute('position', new THREE.BufferAttribute(lp, 3)); lineGeo.setAttribute('color', new THREE.BufferAttribute(lc, 3));
+const creatureLines = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ vertexColors: true }));
+creatureLines.frustumCulled = false; scene.add(creatureLines);
+let li = 0;
+function addLine(ax, ay, az, bx, by, bz, col) {
+  if (li >= MAXL) return; const o = li * 6;
+  lp[o] = ax; lp[o + 1] = ay; lp[o + 2] = az; lp[o + 3] = bx; lp[o + 4] = by; lp[o + 5] = bz;
+  lc[o] = lc[o + 3] = col.r; lc[o + 1] = lc[o + 4] = col.g; lc[o + 2] = lc[o + 5] = col.b; li++;
+}
+
+// glow halos
+const MAXG = 80;
+const gPos = new Float32Array(MAXG * 3), gCol = new Float32Array(MAXG * 3);
+const glowGeo = new THREE.BufferGeometry();
+glowGeo.setAttribute('position', new THREE.BufferAttribute(gPos, 3)); glowGeo.setAttribute('color', new THREE.BufferAttribute(gCol, 3));
+const glowPts = new THREE.Points(glowGeo, new THREE.PointsMaterial({ size: 0.8, map: glowTex, vertexColors: true, ...ADD }));
+glowPts.frustumCulled = false; scene.add(glowPts);
+let gi = 0;
+function addGlow(p, col, k) { if (gi >= MAXG) return; const o = gi * 3; gPos[o] = p.x; gPos[o + 1] = p.y; gPos[o + 2] = p.z; gCol[o] = col.r * k; gCol[o + 1] = col.g * k; gCol[o + 2] = col.b * k; gi++; }
+
+// particles
+const PMAX = 900;
+const pPos = new Float32Array(PMAX * 3), pCol = new Float32Array(PMAX * 3), pVel = new Float32Array(PMAX * 3), pBase = new Float32Array(PMAX * 3), pLife = new Float32Array(PMAX), pMaxL = new Float32Array(PMAX);
+const partGeo = new THREE.BufferGeometry();
+partGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3)); partGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+const parts = new THREE.Points(partGeo, new THREE.PointsMaterial({ size: 0.11, map: glowTex, vertexColors: true, ...ADD }));
+parts.frustumCulled = false; scene.add(parts);
+let pIdx = 0;
+for (let i = 0; i < PMAX; i++) pPos[i * 3 + 1] = -100;
+function burst(p, hex, n, speed) {
+  tmpCol.setHex(hex);
+  for (let k = 0; k < n; k++) {
+    const i = pIdx; pIdx = (pIdx + 1) % PMAX; const o = i * 3;
+    pPos[o] = p.x; pPos[o + 1] = p.y; pPos[o + 2] = p.z;
+    const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = speed * (0.35 + Math.random() * 0.75), q = Math.sqrt(1 - u * u);
+    pVel[o] = q * Math.cos(th) * s; pVel[o + 1] = u * s + speed * 0.3; pVel[o + 2] = q * Math.sin(th) * s;
+    const white = Math.random() < 0.25 ? 1 : 0;
+    pBase[o] = white ? 1 : tmpCol.r; pBase[o + 1] = white ? 1 : tmpCol.g; pBase[o + 2] = white ? 1 : tmpCol.b;
+    pMaxL[i] = pLife[i] = 0.35 + Math.random() * 0.45;
+  }
+}
+function updateParticles(dt) {
+  const drag = Math.pow(0.08, dt);
+  for (let i = 0; i < PMAX; i++) {
+    const o = i * 3;
+    if (pLife[i] > 0) {
+      pLife[i] -= dt;
+      pVel[o] *= drag; pVel[o + 1] = pVel[o + 1] * drag - 3 * dt; pVel[o + 2] *= drag;
+      pPos[o] += pVel[o] * dt; pPos[o + 1] += pVel[o + 1] * dt; pPos[o + 2] += pVel[o + 2] * dt;
+      const f = Math.max(0, pLife[i] / pMaxL[i]);
+      pCol[o] = pBase[o] * f; pCol[o + 1] = pBase[o + 1] * f; pCol[o + 2] = pBase[o + 2] * f;
+    } else if (pCol[o] + pCol[o + 1] + pCol[o + 2] > 0) { pCol[o] = pCol[o + 1] = pCol[o + 2] = 0; }
+  }
+  partGeo.attributes.position.needsUpdate = true; partGeo.attributes.color.needsUpdate = true;
+}
+
+// score popups
+const popTexCache = new Map();
+function popTex(text, hex) {
+  const key = text + hex; if (popTexCache.has(key)) return popTexCache.get(key);
+  const c = document.createElement('canvas'); c.width = 256; c.height = 96; const g = c.getContext('2d');
+  const col = '#' + hex.toString(16).padStart(6, '0');
+  g.font = '700 58px "Chakra Petch", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = col; g.shadowBlur = 14; g.fillStyle = col; g.fillText(text, 128, 50); g.shadowBlur = 0; g.fillStyle = '#fff'; g.globalAlpha = .8; g.fillText(text, 128, 50);
+  const t = new THREE.CanvasTexture(c); popTexCache.set(key, t); return t;
+}
+const pops = [];
+for (let i = 0; i < 10; i++) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, fog: false }));
+  s.scale.set(0.7, 0.26, 1); s.visible = false; scene.add(s); pops.push({ s, life: 0 });
+}
+let popI = 0;
+function popup(p, text, hex) {
+  const o = pops[popI]; popI = (popI + 1) % pops.length;
+  o.s.material.map = popTex(text, hex); o.s.material.needsUpdate = true; o.s.position.copy(p); o.s.visible = true; o.life = 1;
+}
+
+/* ---------------- spider & flea meshes ---------------- */
+function wireBall(r, detail, hex, fillK) {
+  const g = new THREE.Group(); const geo = new THREE.IcosahedronGeometry(r, detail);
+  g.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(fillK) })));
+  const w = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: hex, wireframe: true })); w.scale.setScalar(1.02); g.add(w);
+  return g;
+}
+const SPIDER_COL = new THREE.Color(0xffe14f);
+const spiderMesh = new THREE.Group();
+{ const ab = wireBall(0.13, 1, 0xffe14f, 0.18); ab.position.z = -0.06; ab.scale.set(1, 0.8, 1.2); spiderMesh.add(ab);
+  const hd = wireBall(0.075, 1, 0xffe14f, 0.18); hd.position.z = 0.1; spiderMesh.add(hd);
+  const eyeM = new THREE.MeshBasicMaterial({ color: 0xff1f5a });
+  for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), eyeM); e.position.set(s * 0.035, 0.03, 0.165); spiderMesh.add(e); } }
+const spLegPos = new Float32Array(16 * 6);
+const spLegGeo = new THREE.BufferGeometry(); spLegGeo.setAttribute('position', new THREE.BufferAttribute(spLegPos, 3));
+spiderMesh.add(new THREE.LineSegments(spLegGeo, new THREE.LineBasicMaterial({ color: 0xffe14f })));
+spiderMesh.visible = false; scene.add(spiderMesh);
+function animSpiderLegs(t) {
+  let o = 0;
+  for (const s of [-1, 1]) for (let k = 0; k < 4; k++) {
+    const hz = 0.05 - k * 0.045, kz = 0.09 - k * 0.07, fz = 0.14 - k * 0.1, w = Math.sin(t * 16 + k * 1.7 + (s > 0 ? 0 : Math.PI));
+    const hip = [s * 0.08, 0, hz], knee = [s * 0.22, 0.1 + 0.05 * w, kz], foot = [s * 0.32, -0.12 + 0.03 * w, fz + 0.03 * w];
+    spLegPos.set(hip, o); spLegPos.set(knee, o + 3); spLegPos.set(knee, o + 6); spLegPos.set(foot, o + 9); o += 12;
+  }
+  spLegGeo.attributes.position.needsUpdate = true;
+}
+const FLEA_COL = new THREE.Color(0xfff3a0);
+const fleaMesh = wireBall(0.1, 0, 0xfff3a0, 0.25); fleaMesh.visible = false; scene.add(fleaMesh);
+
+/* ---------------- blasters ---------------- */
+function makeBlaster(hex) {
+  const g = new THREE.Group();
+  const dark = new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(0.12) });
+  const wire = new THREE.LineBasicMaterial({ color: hex });
+  function part(geo, x, y, z, rx) {
+    const m = new THREE.Mesh(geo, dark); m.position.set(x, y, z); if (rx) m.rotation.x = rx; g.add(m);
+    const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), wire); e.position.copy(m.position); e.rotation.copy(m.rotation); g.add(e);
+  }
+  part(new THREE.CylinderGeometry(0.016, 0.022, 0.2, 8), 0, 0, -0.1, Math.PI / 2);
+  part(new THREE.BoxGeometry(0.045, 0.055, 0.11), 0, -0.005, 0.03);
+  part(new THREE.BoxGeometry(0.032, 0.095, 0.038), 0, -0.065, 0.065, 0.32);
+  const core = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.008, 0.2), new THREE.MeshBasicMaterial({ color: 0xffffff })); core.position.set(0, 0.03, -0.02); g.add(core);
+  const flare = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: hex, ...ADD })); flare.scale.setScalar(0.09); flare.position.z = -0.21; g.add(flare);
+  const muzzle = new THREE.Object3D(); muzzle.position.z = -0.22; g.add(muzzle);
+  g.userData = { muzzle, flare };
+  return g;
+}
+function makeReticle(hex) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(0.055, 0.08, 28), new THREE.MeshBasicMaterial({ color: hex, ...ADD, side: THREE.DoubleSide }));
+  m.visible = false; scene.add(m); return m;
+}
+const hands = [];
+function makeHand(idx) {
+  const ctrl = renderer.xr.getController(idx); scene.add(ctrl);
+  const h = { ctrl, source: null, side: 'right', color: HAND_COL.right, model: null, laser: null, reticle: null, firing: false, cd: 0 };
+  ctrl.addEventListener('connected', e => {
+    const src = e.data; if (!src || src.targetRayMode !== 'tracked-pointer') return;
+    h.source = src; h.side = src.handedness === 'left' ? 'left' : 'right'; h.color = HAND_COL[h.side];
+    if (h.model) ctrl.remove(h.model), ctrl.remove(h.laser);
+    h.model = makeBlaster(h.color); ctrl.add(h.model);
+    const lg = new THREE.BufferGeometry();
+    lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, -0.22, 0, 0, -3]), 3));
+    const cc = new THREE.Color(h.color);
+    lg.setAttribute('color', new THREE.BufferAttribute(new Float32Array([cc.r * .7, cc.g * .7, cc.b * .7, 0, 0, 0]), 3));
+    h.laser = new THREE.Line(lg, new THREE.LineBasicMaterial({ vertexColors: true, ...ADD })); ctrl.add(h.laser);
+    if (!h.reticle) h.reticle = makeReticle(h.color); else h.reticle.material.color.setHex(h.color);
+  });
+  ctrl.addEventListener('disconnected', () => {
+    if (h.model) { ctrl.remove(h.model); ctrl.remove(h.laser); h.model = null; h.laser = null; }
+    if (h.reticle) h.reticle.visible = false; h.source = null; h.firing = false;
+  });
+  ctrl.addEventListener('selectstart', () => { h.firing = true; onTriggerPress(); });
+  ctrl.addEventListener('selectend', () => { h.firing = false; });
+  hands.push(h);
+}
+makeHand(0); makeHand(1);
+function pulse(h, v, ms) { try { const a = h && h.source && h.source.gamepad && h.source.gamepad.hapticActuators && h.source.gamepad.hapticActuators[0]; if (a && a.pulse) a.pulse(v, ms); } catch (e) {} }
+
+const deskGunPivot = new THREE.Group(); deskGunPivot.position.set(0.24, -0.22, -0.5); camera.add(deskGunPivot);
+const deskGun = makeBlaster(HAND_COL.right); deskGun.scale.setScalar(1.05); deskGun.rotation.y = Math.PI; deskGunPivot.add(deskGun);
+const deskHand = { side: 'right', color: HAND_COL.right, firing: false, cd: 0, source: null, reticle: makeReticle(HAND_COL.right) };
+const aimPoint = new V3(0, 1, -5);
+
+/* ---------------- audio ---------------- */
+let actx = null, master, sfxGain, musicGain, noiseBuf, muted = false;
+function initAudio() {
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+  actx = new AC();
+  const comp = actx.createDynamicsCompressor(); comp.connect(actx.destination);
+  master = actx.createGain(); master.gain.value = 0.9; master.connect(comp);
+  sfxGain = actx.createGain(); sfxGain.gain.value = 0.55; sfxGain.connect(master);
+  musicGain = actx.createGain(); musicGain.gain.value = 0.3; musicGain.connect(master);
+  noiseBuf = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+  const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  setMuted(muted);
+  startMusic();
+}
+function setMuted(m) { muted = m; if (!actx) return; const t = actx.currentTime; master.gain.setTargetAtTime(m ? 0 : 0.9, t, 0.05); }
+function out(dest, pan) {
+  if (pan && actx.createStereoPanner) { const p = actx.createStereoPanner(); p.pan.value = pan; p.connect(dest); return p; }
+  return dest;
+}
+function tone(type, f0, f1, dur, vol, pan, t, dest) {
+  if (!actx) return; t = t || actx.currentTime;
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(out(dest || sfxGain, pan)); o.start(t); o.stop(t + dur + 0.02);
+}
+function noise(type, freq, q, dur, vol, pan, t, dest) {
+  if (!actx) return; t = t || actx.currentTime;
+  const s = actx.createBufferSource(); s.buffer = noiseBuf;
+  const f = actx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = actx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(f); f.connect(g); g.connect(out(dest || sfxGain, pan)); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+}
+const sfx = {
+  shoot: pan => tone('square', 1700, 260, 0.08, 0.06, pan),
+  seg: () => { noise('bandpass', 1900, 1.2, 0.14, 0.5); tone('sine', 620, 90, 0.16, 0.3); },
+  head: () => { noise('bandpass', 2600, 1.5, 0.2, 0.55); tone('triangle', 900, 140, 0.22, 0.35); },
+  crys: () => tone('triangle', 2600, 1900, 0.04, 0.07),
+  crysBreak: () => noise('highpass', 3200, 0.7, 0.08, 0.25),
+  spark: () => noise('highpass', 5000, 0.7, 0.03, 0.06),
+  spider: () => { noise('lowpass', 900, 0.8, 0.55, 0.8); tone('sawtooth', 320, 40, 0.5, 0.25); },
+  flea: () => { tone('square', 1200, 2400, 0.12, 0.12); noise('bandpass', 3000, 2, 0.12, 0.3); },
+  fleaDrop: () => tone('sine', 1800, 300, 0.5, 0.08),
+  breach: () => { tone('sawtooth', 420, 36, 1.1, 0.38); noise('lowpass', 500, 0.7, 1.0, 0.6); },
+  wave: () => { if (!actx) return; const t = actx.currentTime; [0, 4, 7, 12, 16].forEach((n, i) => tone('square', 440 * Math.pow(2, n / 12), 440 * Math.pow(2, n / 12), 0.16, 0.08, 0, t + i * 0.07)); },
+  life: () => { if (!actx) return; const t = actx.currentTime; [12, 16, 19, 24].forEach((n, i) => tone('triangle', 440 * Math.pow(2, n / 12), 440 * Math.pow(2, n / 12), 0.2, 0.12, 0, t + i * 0.09)); },
+};
+// synthwave loop: kick, offbeat hats, clap, bass, arp. Kicks drive the visual pulse.
+const BPM = 118, STEP = 60 / BPM / 4;
+const CHORDS = [[57, 60, 64, 69], [53, 57, 60, 65], [48, 52, 55, 60], [55, 59, 62, 67]];
+const ROOTS = [33, 29, 36, 31];
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+let nextStep = 0, stepNo = 0; const kickQueue = [];
+function startMusic() { nextStep = actx.currentTime + 0.12; setInterval(schedule, 25); }
+function schedule() {
+  if (!actx) return;
+  while (nextStep < actx.currentTime + 0.12) { playStep(stepNo, nextStep); nextStep += STEP; stepNo++; }
+}
+function playStep(i, t) {
+  const bar = Math.floor(i / 16) % 4, s = i % 16, M = musicGain;
+  if (s % 4 === 0) { tone('sine', 150, 42, 0.26, 0.9, 0, t, M); kickQueue.push(t); }
+  if (s % 4 === 2) noise('highpass', 7500, 0.7, 0.045, 0.16, 0, t, M);
+  if (s === 4 || s === 12) noise('bandpass', 1500, 0.9, 0.14, 0.32, 0, t, M);
+  if (s % 2 === 0) {
+    const o = actx.createOscillator(), f = actx.createBiquadFilter(), g = actx.createGain();
+    o.type = 'sawtooth'; o.frequency.value = mtof(ROOTS[bar] + (s % 4 === 2 ? 12 : 0));
+    f.type = 'lowpass'; f.frequency.setValueAtTime(900, t); f.frequency.exponentialRampToValueAtTime(180, t + STEP * 1.8);
+    g.gain.setValueAtTime(0.22, t); g.gain.exponentialRampToValueAtTime(0.0001, t + STEP * 1.9);
+    o.connect(f); f.connect(g); g.connect(M); o.start(t); o.stop(t + STEP * 2);
+  }
+  const arpOn = state.mode === 'playing' || state.mode === 'dying';
+  if (arpOn) {
+    const ch = CHORDS[bar], n = ch[(s * 3) % 4] + (s >= 8 ? 12 : 0);
+    const o = actx.createOscillator(), f = actx.createBiquadFilter(), g = actx.createGain();
+    o.type = 'square'; o.frequency.value = mtof(n); f.type = 'lowpass'; f.frequency.value = 2400;
+    g.gain.setValueAtTime(0.045, t); g.gain.exponentialRampToValueAtTime(0.0001, t + STEP * 0.95);
+    o.connect(f); f.connect(g); g.connect(out(M, (s % 2 ? 0.4 : -0.4))); o.start(t); o.stop(t + STEP);
+  }
+}
+
+/* ---------------- game state ---------------- */
+const state = { mode: 'title', score: 0, hi: 0, lives: 3, wave: 1, paused: false, timer: 0, nextExtra: 12000, waveDelay: 0 };
+try { state.hi = parseInt(localStorage.getItem('segmentis.best') || '0', 10) || 0; } catch (e) {}
+$('#bestVal').textContent = pad(state.hi, 6);
+let grid = [];
+let segments = [], segId = 0, stepAcc = 0, stepT = 0;
+let spider = null, spiderTimer = 5, flea = null, fleaCheck = 1;
+let flash = 0, flashHex = 0xff1f5a, beat = 0;
+
+function resetCrystals(n) {
+  grid = []; for (let r = 0; r < ROWS; r++) grid.push(new Array(COLS).fill(0));
+  let placed = 0;
+  while (placed < n) { const r = 2 + Math.floor(Math.random() * (ROWS - 5)), c = Math.floor(Math.random() * COLS); if (!grid[r][c]) { grid[r][c] = 4; placed++; } }
+}
+const crystalAt = (r, c) => r >= 0 && r < ROWS && c >= 0 && c < COLS && grid[r][c] > 0;
+function stepInterval() { return Math.max(0.075, 0.13 - (state.wave - 1) * 0.008); }
+
+function newSeg(c, r, dir, leader) {
+  const s = { id: segId++, c, r, pc: c, pr: r, dir, leader, follower: null, pos: new V3() };
+  if (leader) leader.follower = s; cellPos(c, r, 0.2, s.pos); segments.push(s); return s;
+}
+function spawnCentipede() {
+  segments = []; stepAcc = 0;
+  const w = state.wave, extra = Math.min(Math.max(0, w - 2), 4);
+  const L = Math.max(6, 10 + Math.min(w, 4) - extra);
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const hc = dir > 0 ? L - 1 + Math.floor(Math.random() * (COLS - L + 1)) : Math.floor(Math.random() * (COLS - L + 1));
+  let prev = null;
+  for (let i = 0; i < L; i++) prev = newSeg(hc - dir * i, 0, dir, prev);
+  for (let k = 0; k < extra; k++) newSeg(Math.floor(Math.random() * COLS), 1 + (k % 2), Math.random() < .5 ? 1 : -1, null);
+}
+function stepCentipede() {
+  for (const s of segments) {
+    s.pc = s.c; s.pr = s.r;
+    const nc = s.c + s.dir;
+    if (nc < 0 || nc >= COLS || crystalAt(s.r, nc)) { s.r += 1; s.dir = -s.dir; } else s.c = nc;
+  }
+  for (const s of segments) if (s.r >= ROWS - 1) { breach(s); return; }
+}
+function breach(s) {
+  if (state.mode === 'title') { spawnCentipede(); return; }
+  if (state.mode !== 'playing') return;
+  cellPos(s.c, s.r, 0.2, tmpV); burst(tmpV, 0xff1f5a, 60, 4);
+  loseLife();
+}
+function addScore(n) {
+  if (state.mode !== 'playing') return;
+  state.score += n; sbDirty = true;
+  if (state.score >= state.nextExtra) { state.nextExtra += 12000; state.lives = Math.min(6, state.lives + 1); sfx.life(); setMsg('EXTRA LIFE', '', { time: 1.6 }); }
+}
+function killSegment(s, hand) {
+  const isHead = !s.leader;
+  if (s.follower) s.follower.leader = null;
+  if (s.leader) s.leader.follower = null;
+  segments.splice(segments.indexOf(s), 1);
+  if (s.r < ROWS - 1 && !grid[s.r][s.c]) grid[s.r][s.c] = 4;
+  burst(s.pos, isHead ? headColor.getHex() : bodyColor.getHex(), isHead ? 34 : 22, 3.2);
+  if (isHead) { sfx.head(); addScore(100); popup(s.pos, '100', headColor.getHex()); } else { sfx.seg(); addScore(10); }
+  pulse(hand, isHead ? 0.8 : 0.5, isHead ? 70 : 45);
+  if (!segments.length && state.mode === 'playing') {
+    state.wave++; sbDirty = true; state.waveDelay = 1.8; sfx.wave();
+    setMsg('WAVE ' + pad(state.wave, 2), 'THE SWARM ADAPTS', { time: 1.8 });
+    applyPalette(state.wave);
+  }
+}
+function hitCrystal(r, c, p, hand) {
+  grid[r][c]--;
+  if (grid[r][c] <= 0) { grid[r][c] = 0; burst(p, crysColor.getHex(), 14, 2.2); sfx.crysBreak(); addScore(5); pulse(hand, 0.3, 30); }
+  else { burst(p, crysColor.getHex(), 4, 1.4); sfx.crys(); pulse(hand, 0.15, 15); }
+}
+function loseLife() {
+  state.lives--; state.mode = 'dying'; state.timer = 2.0; sbDirty = true;
+  flash = 1; flashHex = 0xff1f5a; sfx.breach();
+  for (const s of segments) burst(s.pos, bodyColor.getHex(), 8, 2.5);
+  segments = []; killSpider(false); flea = null; fleaMesh.visible = false;
+  for (const h of hands) pulse(h, 1, 300);
+  setMsg('LINE BREACHED', state.lives > 0 ? state.lives + (state.lives === 1 ? ' LIFE LEFT' : ' LIVES LEFT') : '', { time: 2 });
+}
+function startGame() {
+  state.mode = 'playing'; state.score = 0; state.lives = 3; state.wave = 1; state.nextExtra = 12000; state.waveDelay = 0; state.paused = false;
+  applyPalette(1); resetCrystals(46); spawnCentipede(); killSpider(false); spiderTimer = 6; flea = null; fleaMesh.visible = false;
+  for (const b of bolts) { b.life = 0; b.mesh.visible = false; }
+  msg = null; msgTimer = 0; sbDirty = true;
+  setMsg('WAVE 01', 'HOLD THE LINE', { time: 1.6 });
+}
+function toTitle() {
+  state.mode = 'title'; applyPalette(1);
+  if (!grid.length) resetCrystals(46);
+  if (!segments.length) spawnCentipede();
+  killSpider(false); flea = null; fleaMesh.visible = false;
+  setMsg('SEGMENTIS', renderer.xr.isPresenting ? 'PULL TRIGGER TO START' : 'ENTER VR OR PLAY ON SCREEN', { title: true });
+}
+function gameOver() {
+  state.mode = 'gameover'; state.timer = 1.2;
+  if (state.score > state.hi) { state.hi = state.score; try { localStorage.setItem('segmentis.best', String(state.hi)); } catch (e) {} $('#bestVal').textContent = pad(state.hi, 6); }
+  setMsg('GAME OVER', renderer.xr.isPresenting ? 'PULL TRIGGER TO PLAY AGAIN' : 'CLICK TO PLAY AGAIN');
+}
+function onTriggerPress() {
+  if (state.mode === 'title') startGame();
+  else if (state.mode === 'gameover' && state.timer <= 0) startGame();
+}
+
+/* spider: roams in front of you, eats crystals, lunges at your head */
+function spawnSpider() {
+  const side = Math.random() < 0.5 ? -1 : 1;
+  spider = { pos: new V3(side * 6, headPos.y - 0.5, headPos.z - 2.6), vx: -side * (1.0 + Math.min(state.wave, 8) * 0.08), vy: (Math.random() < .5 ? 1 : -1) * 1.1,
+    mode: 'roam', lunge: 1.6 + Math.random() * 2, t: 0, ph: Math.random() * 6 };
+  spiderMesh.visible = true; noise('bandpass', 600, 4, 0.3, 0.2);
+}
+function killSpider(scored, hand) {
+  if (!spider) return;
+  if (scored) {
+    const d = spider.pos.distanceTo(headPos), pts = d < 1.3 ? 900 : d < 2.2 ? 600 : 300;
+    addScore(pts); popup(spider.pos, String(pts), 0xffe14f); burst(spider.pos, 0xffe14f, 50, 4); sfx.spider(); pulse(hand, 1, 110);
+  }
+  spider = null; spiderMesh.visible = false; spiderTimer = 3 + Math.random() * 4 - Math.min(state.wave, 6) * 0.25;
+}
+function updateSpider(dt, t) {
+  const s = spider; s.t += dt;
+  if (s.mode === 'roam') {
+    s.pos.x += s.vx * dt; s.pos.y += s.vy * dt;
+    const top = headPos.y + 0.35, bot = Math.max(0.35, headPos.y - 1.3);
+    if (s.pos.y > top) s.vy = -Math.abs(s.vy); if (s.pos.y < bot) s.vy = Math.abs(s.vy);
+    const tz = headPos.z - 2.4 + Math.sin(s.t * 1.7 + s.ph) * 0.8;
+    s.pos.z += (tz - s.pos.z) * Math.min(1, dt * 3);
+    s.lunge -= dt;
+    if (s.lunge <= 0 && Math.abs(s.pos.x - headPos.x) < 3.2) { s.mode = 'lunge'; s.lt = 0; noise('bandpass', 900, 6, 0.4, 0.25); }
+    if (s.pos.x * s.vx > 0 && Math.abs(s.pos.x) > 6.8) { killSpider(false); return; }
+  } else {
+    s.lt += dt;
+    tmpV.subVectors(headPos, s.pos); const d = tmpV.length();
+    const sp = 1.7 + Math.min(state.wave, 8) * 0.1;
+    s.pos.addScaledVector(tmpV.normalize(), sp * dt);
+    if (s.lt > 2.6) { s.mode = 'roam'; s.lunge = 2.5 + Math.random() * 2.5; }
+    if (d < 0.42) { burst(s.pos, 0xffe14f, 40, 3); loseLife(); return; }
+  }
+  // eat crystals it brushes
+  const fp = toField(s.pos);
+  if (fp.h < 0.4 && inField(fp)) {
+    const c = Math.round(fp.x / CELL + (COLS - 1) / 2), r = ROWS - 1 - Math.floor(fp.a / CELL);
+    if (crystalAt(r, c)) { grid[r][c] = 0; cellPos(c, r, 0.2, tmpV); burst(tmpV, crysColor.getHex(), 10, 1.8); }
+  }
+  spiderMesh.position.copy(s.pos); spiderMesh.lookAt(headPos);
+  spiderMesh.position.y += Math.abs(Math.sin(t * 9)) * 0.04;
+  animSpiderLegs(t);
+}
+/* flea: drops down a column seeding crystals when your end of the field is bare */
+function updateFlea(dt, t) {
+  const f = flea; f.rowF += f.speed * dt;
+  const r = Math.floor(f.rowF);
+  if (r > f.last) { f.last = r; if (r > 0 && r < ROWS - 2 && !grid[r][f.c] && Math.random() < 0.33) grid[r][f.c] = 4; }
+  if (f.rowF >= ROWS) { flea = null; fleaMesh.visible = false; return; }
+  cellPos(f.c, f.rowF, 0.28, f.pos);
+  fleaMesh.position.copy(f.pos); fleaMesh.rotation.y = t * 12; fleaMesh.rotation.x = t * 7;
+}
+function hitFlea(hand) {
+  flea.hp--;
+  if (flea.hp > 0) { flea.speed *= 2.1; burst(flea.pos, 0xfff3a0, 10, 2); sfx.crys(); pulse(hand, 0.3, 30); return; }
+  addScore(200); popup(flea.pos, '200', 0xfff3a0); burst(flea.pos, 0xfff3a0, 30, 3); sfx.flea(); pulse(hand, 0.7, 60);
+  flea = null; fleaMesh.visible = false;
+}
+
+/* ---------------- bolts ---------------- */
+const boltGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.5, 6); boltGeo.translate(0, -0.25, 0);
+const boltMats = { left: new THREE.MeshBasicMaterial({ color: HAND_COL.left, ...ADD }), right: new THREE.MeshBasicMaterial({ color: HAND_COL.right, ...ADD }) };
+const bolts = [];
+for (let i = 0; i < 48; i++) { const m = new THREE.Mesh(boltGeo, boltMats.right); m.visible = false; scene.add(m); bolts.push({ mesh: m, pos: new V3(), prev: new V3(), vel: new V3(), life: 0, hand: null }); }
+let boltI = 0;
+function fire(hand, origin, dir) {
+  const b = bolts[boltI]; boltI = (boltI + 1) % bolts.length;
+  b.pos.copy(origin); b.prev.copy(origin); b.vel.copy(dir).multiplyScalar(BOLT_SPEED); b.life = 1.1; b.hand = hand;
+  b.mesh.material = boltMats[hand.side]; b.mesh.visible = true; b.mesh.position.copy(origin);
+  b.mesh.quaternion.setFromUnitVectors(AXIS_Y, dir);
+  const pan = hand.side === 'left' ? -0.35 : 0.35; sfx.shoot(renderer.xr.isPresenting ? pan : 0.2);
+  pulse(hand, 0.12, 18);
+}
+function segHit(A, B, px, py, pz, r) {
+  const abx = B.x - A.x, aby = B.y - A.y, abz = B.z - A.z, apx = px - A.x, apy = py - A.y, apz = pz - A.z;
+  const ab2 = abx * abx + aby * aby + abz * abz || 1e-9;
+  let t = (apx * abx + apy * aby + apz * abz) / ab2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const dx = apx - abx * t, dy = apy - aby * t, dz = apz - abz * t;
+  return dx * dx + dy * dy + dz * dz < r * r ? t : -1;
+}
+function updateBolts(dt) {
+  const live = state.mode === 'playing' || state.mode === 'title';
+  for (const b of bolts) {
+    if (b.life <= 0) continue;
+    b.life -= dt; b.prev.copy(b.pos); b.pos.addScaledVector(b.vel, dt); b.mesh.position.copy(b.pos);
+    if (b.life <= 0 || b.pos.y < 0) { b.life = 0; b.mesh.visible = false; continue; }
+    let best = 2, kind = 0, target = null, tr = 0, tc = 0;
+    if (live) {
+      for (const s of segments) { const t = segHit(b.prev, b.pos, s.pos.x, s.pos.y, s.pos.z, 0.24); if (t >= 0 && t < best) { best = t; kind = 1; target = s; } }
+      if (spider) { const t = segHit(b.prev, b.pos, spider.pos.x, spider.pos.y, spider.pos.z, 0.28); if (t >= 0 && t < best) { best = t; kind = 2; } }
+      if (flea) { const t = segHit(b.prev, b.pos, flea.pos.x, flea.pos.y, flea.pos.z, 0.2); if (t >= 0 && t < best) { best = t; kind = 3; } }
+      for (let i = 0; i < crysN; i++) {
+        const o = i * 3, t = segHit(b.prev, b.pos, crysXYZ[o], crysXYZ[o + 1], crysXYZ[o + 2], 0.19);
+        if (t >= 0 && t < best) { best = t; kind = 4; tr = crysRC[i * 2]; tc = crysRC[i * 2 + 1]; }
+      }
+    }
+    // field surface
+    const sA = (b.prev.x - P0.x) * N.x + (b.prev.y - P0.y) * N.y + (b.prev.z - P0.z) * N.z;
+    const sB = (b.pos.x - P0.x) * N.x + (b.pos.y - P0.y) * N.y + (b.pos.z - P0.z) * N.z;
+    if (sA > 0 && sB <= 0) {
+      const tp = sA / (sA - sB);
+      if (tp < best) { tmpV.lerpVectors(b.prev, b.pos, tp); if (inField(toField(tmpV))) { best = tp; kind = 5; } }
+    }
+    if (best > 1) continue;
+    tmpV2.lerpVectors(b.prev, b.pos, best);
+    b.life = 0; b.mesh.visible = false;
+    if (kind === 1) {
+      if (state.mode === 'title') { burst(target.pos, bodyColor.getHex(), 16, 3); sfx.seg(); pulse(b.hand, 0.4, 40); }
+      else killSegment(target, b.hand);
+    } else if (kind === 2) killSpider(true, b.hand);
+    else if (kind === 3) hitFlea(b.hand);
+    else if (kind === 4) { cellPos(tc, tr, 0.2, tmpV3); hitCrystal(tr, tc, tmpV3, b.hand); }
+    else if (kind === 5) { burst(tmpV2, b.hand.color, 5, 1.2); sfx.spark(); }
+  }
+}
+
+/* ---------------- per-frame rendering of instanced things ---------------- */
+const crysXYZ = new Float32Array(MAXC * 3), crysRC = new Int16Array(MAXC * 2); let crysN = 0;
+function renderCrystals(t) {
+  let n = 0;
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    const hp = grid[r] ? grid[r][c] : 0; if (!hp) continue;
+    cellPos(c, r, 0.2, tmpV);
+    crysXYZ[n * 3] = tmpV.x; crysXYZ[n * 3 + 1] = tmpV.y; crysXYZ[n * 3 + 2] = tmpV.z; crysRC[n * 2] = r; crysRC[n * 2 + 1] = c;
+    tmpQ.setFromAxisAngle(N, t * 0.6 + r * 0.7 + c * 1.3);
+    const k = 0.45 + 0.55 * hp / 4;
+    tmpS.set(k, k * (1 + beat * 0.08), k); tmpM.compose(tmpV, tmpQ, tmpS); crysWire.setMatrixAt(n, tmpM);
+    tmpS.multiplyScalar(0.9); tmpM.compose(tmpV, tmpQ, tmpS); crysFill.setMatrixAt(n, tmpM);
+    n++;
+  }
+  crysN = n; crysWire.count = crysFill.count = n;
+  crysWire.instanceMatrix.needsUpdate = crysFill.instanceMatrix.needsUpdate = true;
+}
+function renderCreatures(t) {
+  li = 0; gi = 0; let bc = 0, hc = 0;
+  const sc = 1 + beat * 0.14;
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i], isHead = !s.leader;
+    // facing direction d and side vector
+    cellPos(s.c, s.r, 0, tmpV); cellPos(s.pc, s.pr, 0, tmpV2); tmpV.sub(tmpV2);
+    if (tmpV.lengthSq() < 1e-6) tmpV.set(s.dir, 0, 0);
+    tmpV.normalize(); tmpV3.crossVectors(tmpV, N).normalize();
+    const dx = tmpV.x, dy = tmpV.y, dz = tmpV.z, sx = tmpV3.x, sy = tmpV3.y, sz = tmpV3.z, p = s.pos;
+    tmpQ.setFromAxisAngle(N, t * (isHead ? 3 : 2) + s.id * 0.7);
+    tmpS.set(sc, sc, sc); tmpM.compose(p, tmpQ, tmpS);
+    if (isHead) { headWire.setMatrixAt(hc, tmpM); tmpS.multiplyScalar(0.9); tmpM.compose(p, tmpQ, tmpS); headFill.setMatrixAt(hc, tmpM); hc++; }
+    else { bodyWire.setMatrixAt(bc, tmpM); tmpS.multiplyScalar(0.9); tmpM.compose(p, tmpQ, tmpS); bodyFill.setMatrixAt(bc, tmpM); bc++; }
+    if (s.leader && s.leader.pos.distanceToSquared(p) < (CELL * 1.8) * (CELL * 1.8)) {
+      const q = s.leader.pos; addLine(p.x, p.y, p.z, q.x, q.y, q.z, bodyColor);
+    }
+    if (isHead) {
+      for (const g of [-1, 1]) {
+        addLine(p.x + dx * 0.17 + sx * g * 0.09, p.y + dy * 0.17 + sy * g * 0.09, p.z + dz * 0.17 + sz * g * 0.09,
+                p.x + dx * 0.33 + sx * g * 0.02, p.y + dy * 0.33 + sy * g * 0.02, p.z + dz * 0.33 + sz * g * 0.02, headColor);
+        const w = Math.sin(t * 10 + g) * 0.04;
+        addLine(p.x + dx * 0.1 + sx * g * 0.05 + N.x * 0.12, p.y + dy * 0.1 + sy * g * 0.05 + N.y * 0.12, p.z + dz * 0.1 + sz * g * 0.05 + N.z * 0.12,
+                p.x + dx * 0.34 + sx * g * (0.2 + w) + N.x * 0.3, p.y + dy * 0.34 + sy * g * (0.2 + w) + N.y * 0.3, p.z + dz * 0.34 + sz * g * (0.2 + w) + N.z * 0.3, headColor);
+      }
+      addGlow(p, headColor, 0.55);
+    } else {
+      for (const g of [-1, 1]) {
+        const w = Math.sin(t * 18 + s.id * 1.1 + (g > 0 ? 0 : Math.PI)) * 0.07;
+        addLine(p.x + sx * g * 0.13, p.y + sy * g * 0.13, p.z + sz * g * 0.13,
+                p.x + sx * g * 0.3 + dx * w - N.x * 0.13, p.y + sy * g * 0.3 + dy * w - N.y * 0.13, p.z + sz * g * 0.3 + dz * w - N.z * 0.13, bodyColor);
+      }
+      addGlow(p, bodyColor, 0.35);
+    }
+  }
+  bodyWire.count = bodyFill.count = bc; headWire.count = headFill.count = hc;
+  bodyWire.instanceMatrix.needsUpdate = bodyFill.instanceMatrix.needsUpdate = headWire.instanceMatrix.needsUpdate = headFill.instanceMatrix.needsUpdate = true;
+  if (spider) addGlow(spider.pos, SPIDER_COL, 0.6);
+  if (flea) addGlow(flea.pos, FLEA_COL, 0.6);
+  lineGeo.setDrawRange(0, li * 2); lineGeo.attributes.position.needsUpdate = true; lineGeo.attributes.color.needsUpdate = true;
+  glowGeo.setDrawRange(0, gi); glowGeo.attributes.position.needsUpdate = true; glowGeo.attributes.color.needsUpdate = true;
+}
+
+/* ---------------- aiming ---------------- */
+function rayField(o, d, out) {
+  const denom = d.x * N.x + d.y * N.y + d.z * N.z;
+  if (denom > -1e-4) return -1;
+  const t = ((P0.x - o.x) * N.x + (P0.y - o.y) * N.y + (P0.z - o.z) * N.z) / denom;
+  if (t < 0) return -1;
+  out.copy(o).addScaledVector(d, t);
+  return inField(toField(out)) ? t : -1;
+}
+function placeReticle(ret, p) {
+  ret.visible = true; ret.position.copy(p).addScaledVector(N, 0.02);
+  ret.quaternion.setFromUnitVectors(AXIS_Z, N);
+  const k = 1 + beat * 0.25; ret.scale.set(k, k, k);
+}
+const flashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 12), new THREE.MeshBasicMaterial({ color: 0xff1f5a, transparent: true, opacity: 0, side: THREE.BackSide, depthTest: false, fog: false }));
+flashMesh.renderOrder = 999; scene.add(flashMesh);
+
+const mouseNDC = new THREE.Vector2(0, -0.2), raycaster = new THREE.Raycaster();
+const origin = new V3(), dirV = new V3(), hitP = new V3();
+function updateAim(dt) {
+  if (renderer.xr.isPresenting) {
+    deskGunPivot.visible = false; deskHand.reticle.visible = false;
+    for (const h of hands) {
+      if (!h.model) continue;
+      h.model.userData.muzzle.getWorldPosition(origin);
+      h.ctrl.getWorldQuaternion(tmpQ); dirV.copy(FWD).applyQuaternion(tmpQ);
+      const t = rayField(origin, dirV, hitP);
+      if (t > 0) placeReticle(h.reticle, hitP); else h.reticle.visible = false;
+      const len = t > 0 ? Math.min(t + 0.22, 4) : 3;
+      const arr = h.laser.geometry.attributes.position.array; arr[5] = -len; h.laser.geometry.attributes.position.needsUpdate = true;
+      h.model.userData.flare.scale.setScalar(0.07 + beat * 0.05);
+      h.cd -= dt;
+      if (h.firing && h.cd <= 0 && state.mode !== 'dying' && state.mode !== 'gameover') { fire(h, origin, dirV); h.cd = FIRE_CD; }
+    }
+  } else {
+    deskGunPivot.visible = !state.paused;
+    for (const h of hands) if (h.reticle) h.reticle.visible = false;
+    raycaster.setFromCamera(mouseNDC, camera);
+    const ro = raycaster.ray.origin, rd = raycaster.ray.direction;
+    const t = rayField(ro, rd, hitP);
+    if (t > 0) { aimPoint.copy(hitP); placeReticle(deskHand.reticle, hitP); }
+    else { aimPoint.copy(ro).addScaledVector(rd, 14); deskHand.reticle.visible = false; }
+    deskGunPivot.lookAt(aimPoint);
+    deskGun.userData.muzzle.getWorldPosition(origin);
+    dirV.subVectors(aimPoint, origin).normalize();
+    deskHand.cd -= dt;
+    if (deskHand.firing && !state.paused && deskHand.cd <= 0 && (state.mode === 'playing')) { fire(deskHand, origin, dirV); deskHand.cd = FIRE_CD; }
+  }
+}
+
+/* ---------------- main loop ---------------- */
+const clock = new THREE.Clock();
+let elapsed = 0;
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  elapsed += dt; const t = elapsed;
+  headPos.copy(camera.position); if (headPos.lengthSq() < 0.01) headPos.set(0, 1.6, 0);
+  if (actx) { beat *= Math.pow(0.02, dt); while (kickQueue.length && kickQueue[0] <= actx.currentTime) { kickQueue.shift(); beat = 1; } }
+  else { beat = Math.max(0, Math.sin(t * Math.PI * 2 * BPM / 60)) ** 8; }
+
+  const running = !state.paused;
+  if (running) {
+    if (msgTimer > 0) { msgTimer -= dt; if (msgTimer <= 0) { msgTimer = 0; msg = null; sbDirty = true; } }
+    if (state.mode === 'playing' || state.mode === 'title') {
+      if (state.waveDelay > 0) { state.waveDelay -= dt; if (state.waveDelay <= 0) spawnCentipede(); }
+      else {
+        if (!segments.length && state.mode === 'title') spawnCentipede();
+        stepAcc += dt; const iv = stepInterval();
+        while (stepAcc >= iv && segments.length) { stepAcc -= iv; stepCentipede(); if (state.mode === 'dying') break; }
+        stepT = Math.min(1, stepAcc / iv);
+        for (const s of segments) {
+          cellPos(s.pc, s.pr, 0.2, tmpV); cellPos(s.c, s.r, 0.2, tmpV2);
+          s.pos.lerpVectors(tmpV, tmpV2, stepT);
+          s.pos.addScaledVector(N, Math.abs(Math.sin((stepT + s.id * 0.37) * Math.PI)) * 0.05);
+        }
+      }
+    }
+    if (state.mode === 'playing') {
+      if (!spider) { spiderTimer -= dt; if (spiderTimer <= 0 && state.waveDelay <= 0) spawnSpider(); }
+      else updateSpider(dt, t);
+      fleaCheck -= dt;
+      if (fleaCheck <= 0) {
+        fleaCheck = 1;
+        if (!flea && state.wave >= 2 && state.waveDelay <= 0) {
+          let cnt = 0; for (let r = ROWS - 8; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (grid[r][c]) cnt++;
+          if (cnt < 5 && Math.random() < 0.5) { flea = { c: Math.floor(Math.random() * COLS), rowF: 0, last: 0, speed: 7 + state.wave * 0.4, hp: 2, pos: new V3() }; cellPos(flea.c, 0, 0.28, flea.pos); fleaMesh.visible = true; sfx.fleaDrop(); }
+        }
+      }
+      if (flea) updateFlea(dt, t);
+    } else if (state.mode === 'dying') {
+      state.timer -= dt;
+      if (state.timer <= 0) { if (state.lives > 0) { state.mode = 'playing'; spawnCentipede(); spiderTimer = 5; sbDirty = true; } else gameOver(); }
+    } else if (state.mode === 'gameover') { state.timer -= dt; }
+    updateBolts(dt);
+  }
+  updateAim(dt);
+  updateParticles(dt);
+  for (const o of pops) if (o.life > 0) { o.life -= dt * 0.9; o.s.position.y += dt * 0.6; o.s.material.opacity = Math.min(1, o.life * 2); if (o.life <= 0) o.s.visible = false; }
+  renderCrystals(t); renderCreatures(t);
+
+  // ambience pulses with the kick
+  gridMat.color.setHex(0x3b1a78).lerp(bodyColor, 0.12 + beat * 0.25);
+  lineGlow.material.opacity = 0.55 + beat * 0.45 + (state.mode === 'playing' ? 0 : 0);
+  floorGrid.material.opacity = 0.55 + beat * 0.35;
+  footRing.scale.setScalar(1 + beat * 0.12);
+  for (const m of lasers) { m.rotation.z = m.userData.base + Math.sin(t * 0.55 + m.userData.ph) * 0.45; m.material.opacity = 0.35 + beat * 0.65; }
+  for (let i = 0; i < rings.length; i++) { const r = rings[i]; r.rotation.z = t * 0.1 * (i % 2 ? 1 : -1); const k = 1 + beat * 0.04 * (1 - i / rings.length); r.scale.set(k, k, 1); }
+
+  if (flash > 0) { flash = Math.max(0, flash - dt * 1.4); }
+  flashMesh.material.opacity = flash * 0.55; flashMesh.visible = flash > 0; flashMesh.position.copy(headPos);
+  if (sbDirty) drawScoreboard();
+  renderer.render(scene, camera);
+}
+renderer.setAnimationLoop(loop);
+
+/* ---------------- UI wiring ---------------- */
+const overlay = $('#overlay'), vrBtn = $('#vrBtn'), flatBtn = $('#flatBtn'), vrNote = $('#vrNote'), hud = $('#hud');
+function showOverlay(v) { overlay.hidden = !v; hud.hidden = v || renderer.xr.isPresenting; }
+function refreshFlatLabel() { flatBtn.textContent = state.mode === 'playing' && state.paused ? 'Resume on this screen' : 'Play on this screen'; }
+
+if (navigator.xr && navigator.xr.isSessionSupported) {
+  navigator.xr.isSessionSupported('immersive-vr').then(ok => {
+    if (ok) { vrBtn.disabled = false; vrNote.textContent = 'Headset detected. Put it on, then press Enter VR.'; }
+    else { vrNote.textContent = 'No VR headset found here. Open this page in the Meta Quest browser to play in VR.'; }
+  }).catch(() => { vrNote.classList.add('warn'); vrNote.textContent = 'VR is blocked in this view. Open the game’s own link in the Meta Quest browser.'; });
+} else {
+  vrNote.textContent = window.isSecureContext ? 'This browser has no WebXR. Open the page in the Meta Quest browser to play in VR.' : 'VR needs an https:// link. Open the hosted link in the Meta Quest browser.';
+}
+
+vrBtn.addEventListener('click', async () => {
+  initAudio();
+  try {
+    const session = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] });
+    renderer.xr.setReferenceSpaceType('local-floor');
+    await renderer.xr.setSession(session);
+    session.addEventListener('end', onSessionEnd);
+    showOverlay(false);
+    if (state.mode === 'playing' || state.mode === 'dying') state.paused = false; else toTitle();
+    sbDirty = true;
+  } catch (e) {
+    vrNote.classList.add('warn'); vrNote.textContent = 'Could not start VR: ' + (e && e.message ? e.message : 'the headset refused the session') + '.';
+  }
+});
+function onSessionEnd() {
+  placeDesktopCam();
+  for (const h of hands) h.firing = false;
+  if (state.mode === 'playing' || state.mode === 'dying') state.paused = true; else toTitle();
+  refreshFlatLabel(); showOverlay(true);
+}
+flatBtn.addEventListener('click', () => {
+  initAudio();
+  if (state.mode === 'playing' && state.paused) state.paused = false;
+  else startGame();
+  showOverlay(false);
+});
+
+const cv = renderer.domElement;
+function setMouse(e) { const r = cv.getBoundingClientRect(); mouseNDC.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); }
+cv.addEventListener('pointermove', e => setMouse(e));
+cv.addEventListener('pointerdown', e => {
+  if (renderer.xr.isPresenting || !overlay.hidden) return;
+  setMouse(e); initAudio();
+  if (state.mode === 'gameover') { if (state.timer <= 0) startGame(); return; }
+  deskHand.firing = true; try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+});
+const stopFire = () => { deskHand.firing = false; };
+cv.addEventListener('pointerup', stopFire); cv.addEventListener('pointercancel', stopFire); cv.addEventListener('pointerleave', stopFire);
+window.addEventListener('keydown', e => {
+  if (e.key === 'm' || e.key === 'M') { setMuted(!muted); }
+  if (e.key === 'Escape' && !renderer.xr.isPresenting && overlay.hidden) {
+    if (state.mode === 'playing' || state.mode === 'dying') state.paused = true;
+    deskHand.firing = false; refreshFlatLabel(); showOverlay(true);
+  }
+});
+window.addEventListener('resize', () => {
+  if (renderer.xr.isPresenting) return;
+  renderer.setSize(window.innerWidth, window.innerHeight); placeDesktopCam();
+});
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { popTexCache.clear(); sbDirty = true; });
+
+applyPalette(1);
+toTitle();
+if (location.hash === '#debug') window.__seg = { state, get segments() { return segments; }, get spider() { return spider; } };
+})();
+</script>
+
+</body>
+</html>
